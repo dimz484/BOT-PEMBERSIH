@@ -1,5 +1,15 @@
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, REST, Routes } = require('discord.js');
-require('dotenv').config();
+
+// LANGSUNG BACA DARI process.env (Railway variables)
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+
+// CEK APAKAH ADA TOKEN & CLIENT_ID
+if (!TOKEN || !CLIENT_ID) {
+  console.error('❌ ERROR: TOKEN atau CLIENT_ID gak ditemukan!');
+  console.error('📌 Pastikan sudah diisi di Railway Variables');
+  process.exit(1);
+}
 
 const client = new Client({
   intents: [
@@ -8,15 +18,6 @@ const client = new Client({
     GatewayIntentBits.MessageContent
   ]
 });
-
-const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-
-// CEK TOKEN & CLIENT_ID
-if (!TOKEN || !CLIENT_ID) {
-  console.error('❌ ERROR: TOKEN atau CLIENT_ID gak ada di .env!');
-  process.exit(1);
-}
 
 // Command definition
 const commands = [
@@ -36,7 +37,7 @@ const commands = [
   }
 ];
 
-// Register slash commands PAKAI TRY-CATCH
+// Register slash commands
 async function registerCommands() {
   try {
     const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -48,13 +49,13 @@ async function registerCommands() {
     console.log('✅ Slash command /clear berhasil didaftarkan!');
   } catch (error) {
     console.error('❌ Gagal register command:', error.message);
-    // Tetap jalanin bot walau register gagal
   }
 }
 
 client.once('ready', () => {
   console.log(`✅ ${client.user.tag} siap pakai slash command!`);
   console.log(`📊 Bot ada di ${client.guilds.cache.size} server`);
+  console.log(`🔑 CLIENT_ID: ${CLIENT_ID}`);
 });
 
 // Handle interaction
@@ -113,7 +114,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// Login dengan error handling
+// Login
 client.login(TOKEN)
   .then(() => {
     console.log('🔑 Bot berhasil login!');
@@ -125,7 +126,7 @@ client.login(TOKEN)
     process.exit(1);
   });
 
-// Handle unhandled errors (biar gak crash)
+// Handle unhandled errors
 process.on('unhandledRejection', (error) => {
   console.error('⚠️ Unhandled Rejection:', error);
 });
