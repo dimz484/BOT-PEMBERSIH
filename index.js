@@ -12,7 +12,13 @@ const client = new Client({
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-// Command list
+// CEK TOKEN & CLIENT_ID
+if (!TOKEN || !CLIENT_ID) {
+  console.error('❌ ERROR: TOKEN atau CLIENT_ID gak ada di .env!');
+  process.exit(1);
+}
+
+// Command definition
 const commands = [
   {
     name: 'clear',
@@ -21,7 +27,7 @@ const commands = [
       {
         name: 'jumlah',
         description: 'Jumlah pesan yang mau dihapus (1-100)',
-        type: 4, // INTEGER
+        type: 4,
         required: true,
         min_value: 1,
         max_value: 100
@@ -30,11 +36,10 @@ const commands = [
   }
 ];
 
-// Register slash commands (global)
-const rest = new REST({ version: '10' }).setToken(TOKEN);
-
-(async () => {
+// Register slash commands PAKAI TRY-CATCH
+async function registerCommands() {
   try {
+    const rest = new REST({ version: '10' }).setToken(TOKEN);
     console.log('🔄 Mendaftarkan slash command global...');
     await rest.put(
       Routes.applicationCommands(CLIENT_ID),
@@ -42,40 +47,41 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
     );
     console.log('✅ Slash command /clear berhasil didaftarkan!');
   } catch (error) {
-    console.error(error);
+    console.error('❌ Gagal register command:', error.message);
+    // Tetap jalanin bot walau register gagal
   }
-})();
+}
 
 client.once('ready', () => {
   console.log(`✅ ${client.user.tag} siap pakai slash command!`);
+  console.log(`📊 Bot ada di ${client.guilds.cache.size} server`);
 });
 
-// Handle slash command
+// Handle interaction
 client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== 'clear') return;
-
-  // Cek izin user
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-    return interaction.reply({
-      content: '❌ Kamu gak punya izin **Manage Messages**!',
-      ephemeral: true
-    });
-  }
-
-  // Cek izin bot
-  if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-    return interaction.reply({
-      content: '❌ Bot gak punya izin **Manage Messages**!',
-      ephemeral: true
-    });
-  }
-
-  const jumlah = interaction.options.getInteger('jumlah');
-
-  await interaction.deferReply({ ephemeral: true });
-
   try {
+    if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName !== 'clear') return;
+
+    // Cek izin user
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+      return interaction.reply({
+        content: '❌ Kamu gak punya izin **Manage Messages**!',
+        ephemeral: true
+      });
+    }
+
+    // Cek izin bot
+    if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+      return interaction.reply({
+        content: '❌ Bot gak punya izin **Manage Messages**!',
+        ephemeral: true
+      });
+    }
+
+    const jumlah = interaction.options.getInteger('jumlah');
+    await interaction.deferReply({ ephemeral: true });
+
     const fetched = await interaction.channel.messages.fetch({ limit: jumlah });
     const deleted = await interaction.channel.bulkDelete(fetched, true);
 
@@ -92,12 +98,38 @@ client.on('interactionCreate', async (interaction) => {
     setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
 
   } catch (error) {
-    console.error(error);
-    await interaction.editReply({
-      content: '⚠️ Gagal hapus pesan! Mungkin pesan terlalu lama (>14 hari).',
-      ephemeral: true
-    });
+    console.error('❌ Error di interaction:', error);
+    if (interaction.deferred) {
+      await interaction.editReply({
+        content: '⚠️ Gagal hapus pesan! Mungkin pesan terlalu lama (>14 hari).',
+        ephemeral: true
+      });
+    } else {
+      await interaction.reply({
+        content: '⚠️ Terjadi error! Coba lagi nanti.',
+        ephemeral: true
+      });
+    }
   }
 });
 
-client.login(TOKEN);
+// Login dengan error handling
+client.login(TOKEN)
+  .then(() => {
+    console.log('🔑 Bot berhasil login!');
+    // Register command setelah login
+    setTimeout(registerCommands, 3000);
+  })
+  .catch(error => {
+    console.error('❌ Gagal login:', error.message);
+    process.exit(1);
+  });
+
+// Handle unhandled errors (biar gak crash)
+process.on('unhandledRejection', (error) => {
+  console.error('⚠️ Unhandled Rejection:', error);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('⚠️ Uncaught Exception:', error);
+});
