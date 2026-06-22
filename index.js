@@ -1,13 +1,10 @@
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, REST, Routes } = require('discord.js');
 
-// LANGSUNG BACA DARI process.env (Railway variables)
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-// CEK APAKAH ADA TOKEN & CLIENT_ID
 if (!TOKEN || !CLIENT_ID) {
   console.error('❌ ERROR: TOKEN atau CLIENT_ID gak ditemukan!');
-  console.error('📌 Pastikan sudah diisi di Railway Variables');
   process.exit(1);
 }
 
@@ -23,21 +20,20 @@ const client = new Client({
 const commands = [
   {
     name: 'clear',
-    description: 'Hapus pesan di channel ini',
+    description: 'Hapus pesan di channel ini (max 1000)',
     options: [
       {
         name: 'jumlah',
-        description: 'Jumlah pesan yang mau dihapus (1-100)',
+        description: 'Jumlah pesan yang mau dihapus (1-1000)',
         type: 4,
         required: true,
         min_value: 1,
-        max_value: 100
+        max_value: 1000 // Sekarang bisa sampe 1000!
       }
     ]
   }
 ];
 
-// Register slash commands
 async function registerCommands() {
   try {
     const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -53,9 +49,8 @@ async function registerCommands() {
 }
 
 client.once('ready', () => {
-  console.log(`✅ ${client.user.tag} siap pakai slash command!`);
+  console.log(`✅ ${client.user.tag} siap hapus sampe 1000 pesan!`);
   console.log(`📊 Bot ada di ${client.guilds.cache.size} server`);
-  console.log(`🔑 CLIENT_ID: ${CLIENT_ID}`);
 });
 
 // Handle interaction
@@ -80,29 +75,60 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    const jumlah = interaction.options.getInteger('jumlah');
+    const totalJumlah = interaction.options.getInteger('jumlah');
     await interaction.deferReply({ ephemeral: true });
 
-    const fetched = await interaction.channel.messages.fetch({ limit: jumlah });
-    const deleted = await interaction.channel.bulkDelete(fetched, true);
+    let totalDeleted = 0;
+    let batch = 0;
+    const maxPerBatch = 100;
+    let sisa = totalJumlah;
 
+    // Loop hapus 100 per batch
+    while (sisa > 0) {
+      batch++;
+      const hapusSekarang = Math.min(sisa, maxPerBatch);
+      
+      const fetched = await interaction.channel.messages.fetch({ limit: hapusSekarang });
+      
+      // Kalo udah gak ada pesan lagi, stop
+      if (fetched.size === 0) break;
+      
+      const deleted = await interaction.channel.bulkDelete(fetched, true);
+      totalDeleted += deleted.size;
+      sisa -= deleted.size;
+      
+      // Kasih jeda biar gak kena rate limit
+      if (sisa > 0) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    // Kirim hasil
     const embed = new EmbedBuilder()
-      .setColor('#00ff00')
-      .setTitle('🧹 Pesan Dibersihkan!')
-      .setDescription(`Berhasil menghapus **${deleted.size}** pesan.`)
+      .setColor(totalDeleted > 0 ? '#00ff00' : '#ff0000')
+      .setTitle(totalDeleted > 0 ? '🧹 Pesan Dibersihkan!' : '⚠️ Gagal Hapus!')
+      .setDescription(
+        totalDeleted > 0 
+          ? `Berhasil menghapus **${totalDeleted}** pesan dari **${totalJumlah}** yang diminta.`
+          : `Gak ada pesan yang bisa dihapus (mungkin pesan >14 hari atau channel kosong).`
+      )
+      .addFields(
+        { name: '📦 Total Batch', value: `${batch} kali`, inline: true },
+        { name: '⏱️ Waktu', value: `${batch} detik`, inline: true }
+      )
       .setTimestamp()
       .setFooter({ text: `Diminta oleh ${interaction.user.tag}` });
 
     await interaction.editReply({ embeds: [embed] });
 
-    // Auto hapus reply setelah 5 detik
-    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+    // Auto hapus reply setelah 10 detik (kalo 1000 butuh waktu baca)
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 10000);
 
   } catch (error) {
-    console.error('❌ Error di interaction:', error);
+    console.error('❌ Error:', error);
     if (interaction.deferred) {
       await interaction.editReply({
-        content: '⚠️ Gagal hapus pesan! Mungkin pesan terlalu lama (>14 hari).',
+        content: '⚠️ Gagal hapus pesan! Error: ' + error.message,
         ephemeral: true
       });
     } else {
@@ -114,11 +140,9 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// Login
 client.login(TOKEN)
   .then(() => {
     console.log('🔑 Bot berhasil login!');
-    // Register command setelah login
     setTimeout(registerCommands, 3000);
   })
   .catch(error => {
@@ -126,7 +150,6 @@ client.login(TOKEN)
     process.exit(1);
   });
 
-// Handle unhandled errors
 process.on('unhandledRejection', (error) => {
   console.error('⚠️ Unhandled Rejection:', error);
 });
