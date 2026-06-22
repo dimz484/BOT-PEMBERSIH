@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, REST, Routes } = require('discord.js');
 require('dotenv').config();
 
 const client = new Client({
@@ -9,52 +9,95 @@ const client = new Client({
   ]
 });
 
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+
+// Command list
+const commands = [
+  {
+    name: 'clear',
+    description: 'Hapus pesan di channel ini',
+    options: [
+      {
+        name: 'jumlah',
+        description: 'Jumlah pesan yang mau dihapus (1-100)',
+        type: 4, // INTEGER
+        required: true,
+        min_value: 1,
+        max_value: 100
+      }
+    ]
+  }
+];
+
+// Register slash commands (global)
+const rest = new REST({ version: '10' }).setToken(TOKEN);
+
+(async () => {
+  try {
+    console.log('🔄 Mendaftarkan slash command global...');
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: commands }
+    );
+    console.log('✅ Slash command /clear berhasil didaftarkan!');
+  } catch (error) {
+    console.error(error);
+  }
+})();
+
 client.once('ready', () => {
-  console.log(`✅ ${client.user.tag} siap bersih-bersih di SEMUA server!`);
+  console.log(`✅ ${client.user.tag} siap pakai slash command!`);
 });
 
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
-  if (!message.content.startsWith('!clear')) return;
+// Handle slash command
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== 'clear') return;
 
   // Cek izin user
-  if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-    return message.reply('❌ Kamu gak punya izin **Manage Messages**!');
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({
+      content: '❌ Kamu gak punya izin **Manage Messages**!',
+      ephemeral: true
+    });
   }
 
   // Cek izin bot
-  if (!message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-    return message.reply('❌ Bot gak punya izin **Manage Messages**!');
+  if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({
+      content: '❌ Bot gak punya izin **Manage Messages**!',
+      ephemeral: true
+    });
   }
 
-  const args = message.content.split(' ');
-  const jumlah = parseInt(args[1]);
+  const jumlah = interaction.options.getInteger('jumlah');
 
-  // Validasi jumlah
-  if (!jumlah || isNaN(jumlah) || jumlah < 1 || jumlah > 100) {
-    return message.reply('📌 Pakai: `!clear <1-100>`\nContoh: `!clear 50`');
-  }
+  await interaction.deferReply({ ephemeral: true });
 
   try {
-    const fetched = await message.channel.messages.fetch({ limit: jumlah });
-    const deleted = await message.channel.bulkDelete(fetched, true);
+    const fetched = await interaction.channel.messages.fetch({ limit: jumlah });
+    const deleted = await interaction.channel.bulkDelete(fetched, true);
 
     const embed = new EmbedBuilder()
       .setColor('#00ff00')
       .setTitle('🧹 Pesan Dibersihkan!')
       .setDescription(`Berhasil menghapus **${deleted.size}** pesan.`)
       .setTimestamp()
-      .setFooter({ text: `Diminta oleh ${message.author.tag}` });
+      .setFooter({ text: `Diminta oleh ${interaction.user.tag}` });
 
-    const reply = await message.channel.send({ embeds: [embed] });
+    await interaction.editReply({ embeds: [embed] });
 
-    // Auto hapus embed setelah 5 detik
-    setTimeout(() => reply.delete().catch(() => {}), 5000);
+    // Auto hapus reply setelah 5 detik
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
 
   } catch (error) {
     console.error(error);
-    message.reply('⚠️ Gagal hapus pesan! Mungkin pesan terlalu lama (>14 hari).');
+    await interaction.editReply({
+      content: '⚠️ Gagal hapus pesan! Mungkin pesan terlalu lama (>14 hari).',
+      ephemeral: true
+    });
   }
 });
 
-client.login(process.env.TOKEN);
+client.login(TOKEN);
